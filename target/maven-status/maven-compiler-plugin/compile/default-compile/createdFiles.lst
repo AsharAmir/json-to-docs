@@ -1,0 +1,10 @@
+com\yourcompany\docgen\formats\WordProcessor.class
+com\yourcompany\docgen\formats\PdfConverter.class
+com\yourcompany\docgen\formats\ExcelProcessor.class
+com\yourcompany\docgen\formats\OdtProcessor.class
+com\yourcompany\docgen\TemplateEngine.class
+com\yourcompany\docgen\DataParser.class
+com\yourcompany\docgen\DocumentGenerator.class
+com\yourcompany\docgen\formats\TemplateProcessor.class
+com\yourcompany\docgen\formats\PptProcessor.class
+com\yourcompany\docgen\Main.class
