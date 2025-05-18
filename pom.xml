@@ -20,23 +20,7 @@
     </repositories>
     <dependencies>
         <!-- Apache POI for DOCX, XLSX, PPTX -->
-        <dependency>C:\Users\ashaa\Desktop\VS CODE\json to docs>java -jar target\document-generator-1.0-SNAPSHOT-jar-with-dependencies.jar src\main\resources\sample.json src\main\resources\templates\sample_template.xlsx output xlsx
-ERROR StatusLogger Log4j2 could not find a logging implementation. Please add log4j-core to the classpath. Using SimpleLogger to log to the console...
-Document generation completed.
-
-C:\Users\ashaa\Desktop\VS CODE\json to docs>java -jar target\document-generator-1.0-SNAPSHOT-jar-with-dependencies.jar src\main\resources\sample.json src\main\resources\templates\sample_template.pptx output pptx
-ERROR StatusLogger Log4j2 could not find a logging implementation. Please add log4j-core to the classpath. Using SimpleLogger to log to the console...
-org.apache.xmlbeans.impl.values.XmlValueDisconnectedException
-        at org.apache.xmlbeans.impl.values.XmlObjectBase.check_orphaned(XmlObjectBase.java:1194)
-        at org.openxmlformats.schemas.drawingml.x2006.main.impl.CTTextLineBreakImpl.isSetRPr(CTTextLineBreakImpl.java:50)
-        at org.apache.poi.xslf.usermodel.XSLFTextRun.getRPr(XSLFTextRun.java:512)
-        at org.apache.poi.xslf.usermodel.XSLFTextParagraph.clearButKeepProperties(XSLFTextParagraph.java:1023)
-        at org.apache.poi.xslf.usermodel.XSLFTextShape.setText(XSLFTextShape.java:133)
-        at com.yourcompany.docgen.formats.PptProcessor.processTemplate(PptProcessor.java:22)
-        at com.yourcompany.docgen.DocumentGenerator.generateFromPptTemplate(DocumentGenerator.java:50)
-        at com.yourcompany.docgen.Main.main(Main.java:25)
-
-C:\Users\ashaa\Desktop\VS CODE\json to docs>
+        <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
             <version>5.2.5</version>
@@ -53,6 +37,16 @@ C:\Users\ashaa\Desktop\VS CODE\json to docs>
             <artifactId>jackson-databind</artifactId>
             <version>2.15.2</version>
         </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.15.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.15.2</version>
+        </dependency>
         <!-- JODConverter for ODT and other conversions via LibreOffice -->
         <dependency>
             <groupId>org.jodconverter</groupId>
@@ -65,16 +59,7 @@ C:\Users\ashaa\Desktop\VS CODE\json to docs>
             <artifactId>slf4j-simple</artifactId>
             <version>2.0.9</version>
         </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>2.15.2</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>2.15.2</version>
-        </dependency>
+        <!-- JAXB for Java 11+ compatibility -->
         <dependency>
             <groupId>javax.xml.bind</groupId>
             <artifactId>jaxb-api</artifactId>
@@ -89,6 +74,13 @@ C:\Users\ashaa\Desktop\VS CODE\json to docs>
             <groupId>org.glassfish.jaxb</groupId>
             <artifactId>jaxb-core</artifactId>
             <version>2.3.0.1</version>
+        </dependency>
+        <!-- JUnit 5 for testing -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.9.3</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
     <build>

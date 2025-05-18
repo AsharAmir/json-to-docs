@@ -1,0 +1,6 @@
+com\yourcompany\docgen\DocumentGeneratorTest.class
+com\yourcompany\docgen\formats\OdtProcessorTest.class
+com\yourcompany\docgen\formats\ExcelProcessorTest.class
+com\yourcompany\docgen\formats\PptProcessorTest.class
+com\yourcompany\docgen\DataParserTest.class
+com\yourcompany\docgen\formats\WordProcessorTest.class
