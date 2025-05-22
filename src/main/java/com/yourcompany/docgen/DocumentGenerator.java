@@ -11,17 +11,14 @@ import java.util.Map;
 public class DocumentGenerator {
     public void generateFromWordTemplate(String jsonPath, String templatePath, String outputDir, boolean toPdf) throws Exception {
         DataParser parser = new DataParser();
-        List<Map<String, Object>> records = parser.parseJsonArray(jsonPath);
+        Map<String, Object> data = parser.parseJsonObject(jsonPath);
         WordProcessor wordProcessor = new WordProcessor();
         PdfConverter pdfConverter = new PdfConverter();
-        for (int i = 0; i < records.size(); i++) {
-            Map<String, Object> data = records.get(i);
-            String outDocx = outputDir + "/output_" + (i+1) + ".docx";
-            wordProcessor.processTemplate(templatePath, outDocx, data);
-            if (toPdf) {
-                String outPdf = outputDir + "/output_" + (i+1) + ".pdf";
-                pdfConverter.wordToPdf(outDocx, outPdf);
-            }
+        String outDocx = outputDir + "/output_1.docx";
+        wordProcessor.processTemplate(templatePath, outDocx, data);
+        if (toPdf) {
+            String outPdf = outputDir + "/output_1.pdf";
+            pdfConverter.wordToPdf(outDocx, outPdf);
         }
     }
 

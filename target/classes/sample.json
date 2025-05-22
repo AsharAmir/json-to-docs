@@ -1,4 +1,11 @@
-[
-  {"name": "Alice", "amount": 123.45, "date": "2024-06-01"},
-  {"name": "Bob", "amount": 678.90, "date": "2024-06-02"}
-] 
+{
+  "invoiceNumber": "INV-2024-001",
+  "customer": "Acme Corp",
+  "date": "2024-06-01",
+  "totalAmount": 1234.56,
+  "items": [
+    { "desc": "Widget A", "qty": 2, "price": 100 },
+    { "desc": "Widget B", "qty": 1, "price": 200 },
+    { "desc": "Widget C", "qty": 5, "price": 50 }
+  ]
+}

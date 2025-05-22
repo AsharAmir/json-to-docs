@@ -10,4 +10,8 @@ public class DataParser {
         ObjectMapper mapper = new ObjectMapper();
         return mapper.readValue(new File(jsonPath), List.class);
     }
+    public Map<String, Object> parseJsonObject(String jsonPath) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        return mapper.readValue(new File(jsonPath), Map.class);
+    }
 } 
