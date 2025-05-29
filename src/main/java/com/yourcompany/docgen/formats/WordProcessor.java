@@ -7,10 +7,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
+import java.util.function.Function;
 
 public class WordProcessor implements TemplateProcessor {
+    public interface Formatter {
+        String format(String value, String... args);
+    }
+
     @Override
-    public void processTemplate(String templatePath, String outputPath, Map<String, Object> data) throws Exception {
+    public void processTemplate(String templatePath, String outputPath, Map<String, Object> data, Map<String, Formatter> formatters) throws Exception {
         try (FileInputStream fis = new FileInputStream(templatePath);
              XWPFDocument doc = new XWPFDocument(fis)) {
             // Replace in paragraphs
@@ -23,13 +28,11 @@ public class WordProcessor implements TemplateProcessor {
                     }
                 }
                 if (fullText.length() > 0) {
-                    String replaced = replacePlaceholders(fullText.toString(), data);
-                    // Remove all runs
+                    String replaced = replacePlaceholders(fullText.toString(), data, formatters);
                     int numRuns = para.getRuns().size();
                     for (int i = numRuns - 1; i >= 0; i--) {
                         para.removeRun(i);
                     }
-                    // Add a single run with the replaced text
                     XWPFRun newRun = para.createRun();
                     newRun.setText(replaced, 0);
                 }
@@ -47,7 +50,7 @@ public class WordProcessor implements TemplateProcessor {
                                 }
                             }
                             if (fullText.length() > 0) {
-                                String replaced = replacePlaceholders(fullText.toString(), data);
+                                String replaced = replacePlaceholders(fullText.toString(), data, formatters);
                                 int numRuns = para.getRuns().size();
                                 for (int i = numRuns - 1; i >= 0; i--) {
                                     para.removeRun(i);
@@ -60,7 +63,7 @@ public class WordProcessor implements TemplateProcessor {
                 }
             }
             // Table array iteration
-            processTableArrays(doc, data);
+            processTableArrays(doc, data, formatters);
 
             // Second pass: Replace in paragraphs again (for new rows)
             for (XWPFParagraph para : doc.getParagraphs()) {
@@ -72,7 +75,7 @@ public class WordProcessor implements TemplateProcessor {
                     }
                 }
                 if (fullText.length() > 0) {
-                    String replaced = replacePlaceholders(fullText.toString(), data);
+                    String replaced = replacePlaceholders(fullText.toString(), data, formatters);
                     int numRuns = para.getRuns().size();
                     for (int i = numRuns - 1; i >= 0; i--) {
                         para.removeRun(i);
@@ -94,7 +97,7 @@ public class WordProcessor implements TemplateProcessor {
                                 }
                             }
                             if (fullText.length() > 0) {
-                                String replaced = replacePlaceholders(fullText.toString(), data);
+                                String replaced = replacePlaceholders(fullText.toString(), data, formatters);
                                 int numRuns = para.getRuns().size();
                                 for (int i = numRuns - 1; i >= 0; i--) {
                                     para.removeRun(i);
@@ -112,7 +115,55 @@ public class WordProcessor implements TemplateProcessor {
         }
     }
 
-    private void processTableArrays(XWPFDocument doc, Map<String, Object> data) {
+    // Overload for backward compatibility
+    @Override
+    public void processTemplate(String templatePath, String outputPath, Map<String, Object> data) throws Exception {
+        processTemplate(templatePath, outputPath, data, null);
+    }
+
+    private String replacePlaceholders(String text, Map<String, Object> data, Map<String, Formatter> formatters) {
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}");
+        java.util.regex.Matcher matcher = pattern.matcher(text);
+        StringBuffer sb = new StringBuffer();
+        while (matcher.find()) {
+            String expr = matcher.group(1).trim();
+            String[] parts = expr.split(":", 2);
+            String keyExpr = parts[0].trim();
+            Object value = resolveDeepKey(keyExpr, data);
+            String replacement = value == null ? "" : value.toString();
+            if (parts.length > 1 && formatters != null) {
+                String formatterExpr = parts[1].trim();
+                String formatterName;
+                String[] formatterArgs = new String[0];
+                if (formatterExpr.contains("(")) {
+                    int idx = formatterExpr.indexOf('(');
+                    formatterName = formatterExpr.substring(0, idx);
+                    String argStr = formatterExpr.substring(idx + 1, formatterExpr.length() - 1);
+                    formatterArgs = argStr.split(",");
+                    for (int i = 0; i < formatterArgs.length; i++) {
+                        formatterArgs[i] = formatterArgs[i].trim();
+                    }
+                } else {
+                    formatterName = formatterExpr;
+                }
+                Formatter formatter = formatters.get(formatterName);
+                if (formatter != null) {
+                    replacement = formatter.format(replacement, formatterArgs);
+                }
+            }
+            replacement = xmlEscape(replacement);
+            matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(sb);
+        return sb.toString();
+    }
+
+    // Overload for compatibility
+    private String replacePlaceholders(String text, Map<String, Object> data) {
+        return replacePlaceholders(text, data, null);
+    }
+
+    private void processTableArrays(XWPFDocument doc, Map<String, Object> data, Map<String, Formatter> formatters) {
         for (XWPFTable table : doc.getTables()) {
             List<XWPFTableRow> rows = new ArrayList<>(table.getRows());
             for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
@@ -129,7 +180,6 @@ public class WordProcessor implements TemplateProcessor {
                     }
                 }
                 String rowText = rowTextBuilder.toString();
-                // Detect if this row is a template for an array (e.g., contains ${items.})
                 String arrayKey = getArrayKeyFromRow(rowText);
                 if (arrayKey != null && data.get(arrayKey) instanceof List) {
                     @SuppressWarnings("unchecked")
@@ -137,54 +187,80 @@ public class WordProcessor implements TemplateProcessor {
                     int insertIdx = rowIdx;
                     for (Map<String, Object> item : items) {
                         XWPFTableRow newRow = table.insertNewTableRow(insertIdx + 1);
-                        cloneAndReplaceRow(row, newRow, arrayKey, item);
+                        cloneAndReplaceRow(row, newRow, arrayKey, item, formatters);
                         insertIdx++;
                     }
-                    table.removeRow(rowIdx); // Remove the template row
-                    break; // Only process one array per table for simplicity
+                    table.removeRow(rowIdx);
+                    break;
                 }
             }
         }
     }
 
+    // Overload for compatibility
+    private void processTableArrays(XWPFDocument doc, Map<String, Object> data) {
+        processTableArrays(doc, data, null);
+    }
+
+    private void cloneAndReplaceRow(XWPFTableRow templateRow, XWPFTableRow newRow, String arrayKey, Map<String, Object> item, Map<String, Formatter> formatters) {
+        while (newRow.getTableCells().size() > 0) {
+            newRow.removeCell(0);
+        }
+        for (int i = 0; i < templateRow.getTableCells().size(); i++) {
+            XWPFTableCell templateCell = templateRow.getCell(i);
+            String cellXml = templateCell.getCTTc().xmlText();
+            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}");
+            java.util.regex.Matcher matcher = pattern.matcher(cellXml);
+            StringBuffer sb = new StringBuffer();
+            while (matcher.find()) {
+                String expr = matcher.group(1).trim();
+                String[] parts = expr.split(":", 2);
+                String keyExpr = parts[0].trim();
+                Object value = resolveDeepKey(keyExpr, item);
+                String replacement = value == null ? "" : value.toString();
+                if (parts.length > 1 && formatters != null) {
+                    String formatterExpr = parts[1].trim();
+                    String formatterName;
+                    String[] formatterArgs = new String[0];
+                    if (formatterExpr.contains("(")) {
+                        int idx = formatterExpr.indexOf('(');
+                        formatterName = formatterExpr.substring(0, idx);
+                        String argStr = formatterExpr.substring(idx + 1, formatterExpr.length() - 1);
+                        formatterArgs = argStr.split(",");
+                        for (int j = 0; j < formatterArgs.length; j++) {
+                            formatterArgs[j] = formatterArgs[j].trim();
+                        }
+                    } else {
+                        formatterName = formatterExpr;
+                    }
+                    Formatter formatter = formatters.get(formatterName);
+                    if (formatter != null) {
+                        replacement = formatter.format(replacement, formatterArgs);
+                    }
+                }
+                replacement = xmlEscape(replacement);
+                matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
+            }
+            matcher.appendTail(sb);
+            cellXml = sb.toString();
+            XWPFTableCell newCell = newRow.addNewTableCell();
+            try {
+                org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc ctTc = org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc.Factory.parse(cellXml);
+                newCell.getCTTc().set(ctTc);
+            } catch (Exception e) {
+                newCell.getCTTc().set(templateCell.getCTTc().copy());
+            }
+        }
+    }
+
     private String getArrayKeyFromRow(String rowText) {
-        // Looks for a placeholder like ${items.something} with optional spaces
+        // Looks for a placeholder like ${items.something} or ${items.nested.something} with optional spaces
         if (rowText == null) return null;
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\$\\{\\s*([a-zA-Z0-9_]+)\\s*\\.\\s*[a-zA-Z0-9_]+\\s*\\}").matcher(rowText);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\$\\{\\s*([a-zA-Z0-9_]+)\\s*(?:\\.[a-zA-Z0-9_]+)+\\s*\}").matcher(rowText);
         if (matcher.find()) {
             return matcher.group(1);
         }
         return null;
-    }
-
-    private void cloneAndReplaceRow(XWPFTableRow templateRow, XWPFTableRow newRow, String arrayKey, Map<String, Object> item) {
-        // Remove all cells from the new row
-        while (newRow.getTableCells().size() > 0) {
-            newRow.removeCell(0);
-        }
-
-        for (int i = 0; i < templateRow.getTableCells().size(); i++) {
-            XWPFTableCell templateCell = templateRow.getCell(i);
-            // Get the XML as a string
-            String cellXml = templateCell.getCTTc().xmlText();
-
-            // Replace placeholders in the XML string
-            for (Map.Entry<String, Object> entry : item.entrySet()) {
-                // Replace with and without spaces
-                cellXml = cellXml.replaceAll("\\$\\{\\s*" + arrayKey + "\\." + entry.getKey() + "\\s*\\}", entry.getValue() == null ? "" : entry.getValue().toString());
-            }
-
-            // Create a new cell and set the modified XML
-            XWPFTableCell newCell = newRow.addNewTableCell();
-            try {
-                // Parse the modified XML and set it to the new cell as CTTc
-                CTTc ctTc = CTTc.Factory.parse(cellXml);
-                newCell.getCTTc().set(ctTc);
-            } catch (Exception e) {
-                // Fallback: just copy the original cell if XML fails
-                newCell.getCTTc().set(templateCell.getCTTc().copy());
-            }
-        }
     }
 
     private String replaceArrayPlaceholders(String text, String arrayKey, Map<String, Object> item) {
@@ -196,12 +272,26 @@ public class WordProcessor implements TemplateProcessor {
         return result;
     }
 
-    private String replacePlaceholders(String text, Map<String, Object> data) {
-        String result = text;
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String keyPattern = "\\$\\{\\s*" + entry.getKey() + "\\s*\\}";
-            result = result.replaceAll(keyPattern, entry.getValue() == null ? "" : entry.getValue().toString());
+    private Object resolveDeepKey(String expr, Map<String, Object> data) {
+        String[] parts = expr.split("\\.");
+        Object current = data;
+        for (String part : parts) {
+            if (current instanceof Map) {
+                current = ((Map<?, ?>) current).get(part);
+            } else {
+                return null;
+            }
+            if (current == null) return null;
         }
-        return result;
+        return current;
+    }
+
+    private String xmlEscape(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&apos;");
     }
 } 
