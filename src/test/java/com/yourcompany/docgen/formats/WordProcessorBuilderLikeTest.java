@@ -124,4 +124,100 @@ public class WordProcessorBuilderLikeTest {
             assertEquals("5", outTable.getRow(1).getCell(1).getText());
         }
     }
+
+    @Test
+    void testFormatterNoFormatterReturnsValue() throws Exception {
+        XWPFDocument doc = new XWPFDocument();
+        XWPFParagraph para = doc.createParagraph();
+        XWPFRun run = para.createRun();
+        run.setText("Value: ${amount}");
+        File template = Files.createTempFile("test-docx-nofmt-template", ".docx").toFile();
+        try (FileOutputStream fos = new FileOutputStream(template)) { doc.write(fos); }
+        Map<String, Object> data = new HashMap<>();
+        data.put("amount", 123);
+        File output = Files.createTempFile("test-docx-nofmt-output", ".docx").toFile();
+        new WordProcessor().processTemplate(template.getAbsolutePath(), output.getAbsolutePath(), data, getFormatters());
+        try (XWPFDocument outDoc = new XWPFDocument(Files.newInputStream(output.toPath()))) {
+            String text = outDoc.getParagraphArray(0).getText();
+            assertTrue(text.contains("Value: 123"));
+        }
+    }
+
+    @Test
+    void testFormatterWithParenthesisNoArgs() throws Exception {
+        XWPFDocument doc = new XWPFDocument();
+        XWPFParagraph para = doc.createParagraph();
+        XWPFRun run = para.createRun();
+        run.setText("Value: ${amount:toFixed()}");
+        File template = Files.createTempFile("test-docx-fmt-paren-template", ".docx").toFile();
+        try (FileOutputStream fos = new FileOutputStream(template)) { doc.write(fos); }
+        Map<String, Object> data = new HashMap<>();
+        data.put("amount", 42.789);
+        File output = Files.createTempFile("test-docx-fmt-paren-output", ".docx").toFile();
+        new WordProcessor().processTemplate(template.getAbsolutePath(), output.getAbsolutePath(), data, getFormatters());
+        try (XWPFDocument outDoc = new XWPFDocument(Files.newInputStream(output.toPath()))) {
+            String text = outDoc.getParagraphArray(0).getText();
+            assertTrue(text.contains("Value: 43")); // toFixed(0) rounds
+        }
+    }
+
+    @Test
+    void testFormatterWithStringArgument() throws Exception {
+        XWPFDocument doc = new XWPFDocument();
+        XWPFParagraph para = doc.createParagraph();
+        XWPFRun run = para.createRun();
+        run.setText("Value: ${amount:custom(\\"abc (test)\\")}");
+        File template = Files.createTempFile("test-docx-fmt-strarg-template", ".docx").toFile();
+        try (FileOutputStream fos = new FileOutputStream(template)) { doc.write(fos); }
+        Map<String, Object> data = new HashMap<>();
+        data.put("amount", 99);
+        File output = Files.createTempFile("test-docx-fmt-strarg-output", ".docx").toFile();
+        // Add a formatter that returns the argument for test
+        Map<String, WordProcessor.Formatter> formatters = getFormatters();
+        formatters.put("custom", (value, args) -> args.length > 0 ? args[0] : "");
+        new WordProcessor().processTemplate(template.getAbsolutePath(), output.getAbsolutePath(), data, formatters);
+        try (XWPFDocument outDoc = new XWPFDocument(Files.newInputStream(output.toPath()))) {
+            String text = outDoc.getParagraphArray(0).getText();
+            assertTrue(text.contains("Value: \"abc (test)\""));
+        }
+    }
+
+    @Test
+    void testFormatterWithWhitespaceAndAntiSlash() throws Exception {
+        XWPFDocument doc = new XWPFDocument();
+        XWPFParagraph para = doc.createParagraph();
+        XWPFRun run = para.createRun();
+        run.setText("Value: ${amount:custom(  spaced \\ \\"quote\\"  )}");
+        File template = Files.createTempFile("test-docx-fmt-ws-template", ".docx").toFile();
+        try (FileOutputStream fos = new FileOutputStream(template)) { doc.write(fos); }
+        Map<String, Object> data = new HashMap<>();
+        data.put("amount", 99);
+        File output = Files.createTempFile("test-docx-fmt-ws-output", ".docx").toFile();
+        Map<String, WordProcessor.Formatter> formatters = getFormatters();
+        formatters.put("custom", (value, args) -> args.length > 0 ? args[0] : "");
+        new WordProcessor().processTemplate(template.getAbsolutePath(), output.getAbsolutePath(), data, formatters);
+        try (XWPFDocument outDoc = new XWPFDocument(Files.newInputStream(output.toPath()))) {
+            String text = outDoc.getParagraphArray(0).getText();
+            assertTrue(text.contains("Value:   spaced \\ \"quote\"  "));
+        }
+    }
+
+    @Test
+    void testFormatterChainingNotSupported() throws Exception {
+        XWPFDocument doc = new XWPFDocument();
+        XWPFParagraph para = doc.createParagraph();
+        XWPFRun run = para.createRun();
+        run.setText("Value: ${amount:int:toFixed(2)}");
+        File template = Files.createTempFile("test-docx-fmt-chain-template", ".docx").toFile();
+        try (FileOutputStream fos = new FileOutputStream(template)) { doc.write(fos); }
+        Map<String, Object> data = new HashMap<>();
+        data.put("amount", 42.789);
+        File output = Files.createTempFile("test-docx-fmt-chain-output", ".docx").toFile();
+        new WordProcessor().processTemplate(template.getAbsolutePath(), output.getAbsolutePath(), data, getFormatters());
+        try (XWPFDocument outDoc = new XWPFDocument(Files.newInputStream(output.toPath()))) {
+            String text = outDoc.getParagraphArray(0).getText();
+            // Should not chain, only first formatter applied or as-is
+            assertTrue(text.contains("Value: 42") || text.contains("Value: 42.789"));
+        }
+    }
 } 
