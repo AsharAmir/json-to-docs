@@ -1,297 +1,156 @@
 package com.yourcompany.docgen.formats;
 
 import org.apache.poi.xwpf.usermodel.*;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.util.List;
-import java.util.Map;
-import java.util.ArrayList;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
-import java.util.function.Function;
+import java.io.*;
+import java.util.*;
+import java.util.regex.*;
 
-public class WordProcessor implements TemplateProcessor {
+public class WordProcessor implements DocumentProcessor {
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
+    private Map<String, Formatter> formatters;
+
     public interface Formatter {
         String format(String value, String... args);
     }
 
-    @Override
-    public void processTemplate(String templatePath, String outputPath, Map<String, Object> data, Map<String, Formatter> formatters) throws Exception {
-        try (FileInputStream fis = new FileInputStream(templatePath);
-             XWPFDocument doc = new XWPFDocument(fis)) {
-            // Replace in paragraphs
-            for (XWPFParagraph para : doc.getParagraphs()) {
-                StringBuilder fullText = new StringBuilder();
-                for (XWPFRun run : para.getRuns()) {
-                    String text = run.getText(0);
-                    if (text != null) {
-                        fullText.append(text);
-                    }
-                }
-                if (fullText.length() > 0) {
-                    String replaced = replacePlaceholders(fullText.toString(), data, formatters);
-                    int numRuns = para.getRuns().size();
-                    for (int i = numRuns - 1; i >= 0; i--) {
-                        para.removeRun(i);
-                    }
-                    XWPFRun newRun = para.createRun();
-                    newRun.setText(replaced, 0);
-                }
+    public WordProcessor() {
+        this.formatters = new HashMap<>();
+        // Add default formatters
+        formatters.put("int", (value, args) -> {
+            try {
+                return Integer.toString((int) Double.parseDouble(value));
+            } catch (Exception e) {
+                return value;
             }
-            // Replace in table cells
-            for (XWPFTable table : doc.getTables()) {
-                for (XWPFTableRow row : table.getRows()) {
-                    for (XWPFTableCell cell : row.getTableCells()) {
-                        for (XWPFParagraph para : cell.getParagraphs()) {
-                            StringBuilder fullText = new StringBuilder();
-                            for (XWPFRun run : para.getRuns()) {
-                                String text = run.getText(0);
-                                if (text != null) {
-                                    fullText.append(text);
-                                }
-                            }
-                            if (fullText.length() > 0) {
-                                String replaced = replacePlaceholders(fullText.toString(), data, formatters);
-                                int numRuns = para.getRuns().size();
-                                for (int i = numRuns - 1; i >= 0; i--) {
-                                    para.removeRun(i);
-                                }
-                                XWPFRun newRun = para.createRun();
-                                newRun.setText(replaced, 0);
-                            }
-                        }
-                    }
-                }
+        });
+        formatters.put("toFixed", (value, args) -> {
+            int digits = args.length > 0 ? Integer.parseInt(args[0]) : 0;
+            try {
+                return String.format("%1$." + digits + "f", Double.parseDouble(value));
+            } catch (Exception e) {
+                return value;
             }
-            // Table array iteration
-            processTableArrays(doc, data, formatters);
-
-            // Second pass: Replace in paragraphs again (for new rows)
-            for (XWPFParagraph para : doc.getParagraphs()) {
-                StringBuilder fullText = new StringBuilder();
-                for (XWPFRun run : para.getRuns()) {
-                    String text = run.getText(0);
-                    if (text != null) {
-                        fullText.append(text);
-                    }
-                }
-                if (fullText.length() > 0) {
-                    String replaced = replacePlaceholders(fullText.toString(), data, formatters);
-                    int numRuns = para.getRuns().size();
-                    for (int i = numRuns - 1; i >= 0; i--) {
-                        para.removeRun(i);
-                    }
-                    XWPFRun newRun = para.createRun();
-                    newRun.setText(replaced, 0);
-                }
-            }
-            // Second pass: Replace in table cells again (for new rows)
-            for (XWPFTable table : doc.getTables()) {
-                for (XWPFTableRow row : table.getRows()) {
-                    for (XWPFTableCell cell : row.getTableCells()) {
-                        for (XWPFParagraph para : cell.getParagraphs()) {
-                            StringBuilder fullText = new StringBuilder();
-                            for (XWPFRun run : para.getRuns()) {
-                                String text = run.getText(0);
-                                if (text != null) {
-                                    fullText.append(text);
-                                }
-                            }
-                            if (fullText.length() > 0) {
-                                String replaced = replacePlaceholders(fullText.toString(), data, formatters);
-                                int numRuns = para.getRuns().size();
-                                for (int i = numRuns - 1; i >= 0; i--) {
-                                    para.removeRun(i);
-                                }
-                                XWPFRun newRun = para.createRun();
-                                newRun.setText(replaced, 0);
-                            }
-                        }
-                    }
-                }
-            }
-            try (FileOutputStream fos = new FileOutputStream(outputPath)) {
-                doc.write(fos);
-            }
-        }
+        });
     }
 
-    // Overload for backward compatibility
     @Override
     public void processTemplate(String templatePath, String outputPath, Map<String, Object> data) throws Exception {
-        processTemplate(templatePath, outputPath, data, null);
+        processTemplate(templatePath, outputPath, data, formatters);
     }
 
-    private String replacePlaceholders(String text, Map<String, Object> data, Map<String, Formatter> formatters) {
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}");
-        java.util.regex.Matcher matcher = pattern.matcher(text);
-        StringBuffer sb = new StringBuffer();
+    public void processTemplate(String templatePath, String outputPath, Map<String, Object> data, 
+                              Map<String, Formatter> customFormatters) throws Exception {
+        if (templatePath == null || outputPath == null || data == null) {
+            throw new IllegalArgumentException("Template path, output path, and data cannot be null");
+        }
+
+        File templateFile = new File(templatePath);
+        if (!templateFile.exists()) {
+            throw new FileNotFoundException("Template file not found: " + templatePath);
+        }
+
+        try (XWPFDocument doc = new XWPFDocument(new FileInputStream(templateFile))) {
+            // Process paragraphs
+            for (XWPFParagraph para : doc.getParagraphs()) {
+                processParagraph(para, data, customFormatters);
+            }
+
+            // Process tables
+            for (XWPFTable table : doc.getTables()) {
+                processTable(table, data, customFormatters);
+            }
+
+            // Save the processed document
+            try (FileOutputStream out = new FileOutputStream(outputPath)) {
+                doc.write(out);
+            }
+        } catch (Exception e) {
+            throw new Exception("Failed to process Word template: " + e.getMessage(), e);
+        }
+    }
+
+    private void processParagraph(XWPFParagraph para, Map<String, Object> data, 
+                                Map<String, Formatter> formatters) {
+        String text = para.getText();
+        if (text.contains("${")) {
+            List<XWPFRun> runs = para.getRuns();
+            if (runs != null && !runs.isEmpty()) {
+                // Clear existing runs
+                for (int i = runs.size() - 1; i >= 0; i--) {
+                    para.removeRun(i);
+                }
+                // Add new run with processed text
+                XWPFRun run = para.createRun();
+                run.setText(replacePlaceholders(text, data, formatters));
+                // Copy formatting from first run if available
+                if (!runs.isEmpty()) {
+                    XWPFRun firstRun = runs.get(0);
+                    run.setBold(firstRun.isBold());
+                    run.setItalic(firstRun.isItalic());
+                    run.setUnderline(firstRun.getUnderline());
+                    run.setFontSize(firstRun.getFontSize());
+                    run.setFontFamily(firstRun.getFontFamily());
+                }
+            }
+        }
+    }
+
+    private void processTable(XWPFTable table, Map<String, Object> data, 
+                            Map<String, Formatter> formatters) {
+        for (XWPFTableRow row : table.getRows()) {
+            for (XWPFTableCell cell : row.getTableCells()) {
+                for (XWPFParagraph para : cell.getParagraphs()) {
+                    processParagraph(para, data, formatters);
+                }
+            }
+        }
+    }
+
+    private String replacePlaceholders(String text, Map<String, Object> data, 
+                                     Map<String, Formatter> formatters) {
+        StringBuilder result = new StringBuilder(text);
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(text);
+        
         while (matcher.find()) {
-            String expr = matcher.group(1).trim();
-            String[] parts = expr.split(":", 2);
-            String keyExpr = parts[0].trim();
-            Object value = resolveDeepKey(keyExpr, data);
-            String replacement = value == null ? "" : value.toString();
-            if (parts.length > 1 && formatters != null) {
-                String formatterExpr = parts[1].trim();
-                String formatterName;
-                String[] formatterArgs = new String[0];
-                if (formatterExpr.contains("(")) {
-                    int idx = formatterExpr.indexOf('(');
-                    formatterName = formatterExpr.substring(0, idx);
-                    String argStr = formatterExpr.substring(idx + 1, formatterExpr.length() - 1);
-                    formatterArgs = argStr.split(",");
-                    for (int i = 0; i < formatterArgs.length; i++) {
-                        formatterArgs[i] = formatterArgs[i].trim();
+            String placeholder = matcher.group(1);
+            String[] parts = placeholder.split(":");
+            String key = parts[0].trim();
+            String formatterName = parts.length > 1 ? parts[1].trim() : null;
+            
+            Object value = getNestedValue(data, key);
+            String replacement = value != null ? value.toString() : "";
+            
+            if (formatterName != null && formatters.containsKey(formatterName)) {
+                String[] args = new String[0];
+                if (formatterName.contains("(")) {
+                    int start = formatterName.indexOf("(");
+                    int end = formatterName.indexOf(")");
+                    if (end > start) {
+                        args = formatterName.substring(start + 1, end).split(",");
+                        formatterName = formatterName.substring(0, start);
                     }
-                } else {
-                    formatterName = formatterExpr;
                 }
-                Formatter formatter = formatters.get(formatterName);
-                if (formatter != null) {
-                    replacement = formatter.format(replacement, formatterArgs);
-                }
+                replacement = formatters.get(formatterName).format(replacement, args);
             }
-            replacement = xmlEscape(replacement);
-            matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
+            
+            result.replace(matcher.start(), matcher.end(), replacement);
         }
-        matcher.appendTail(sb);
-        return sb.toString();
+        
+        return result.toString();
     }
 
-    // Overload for compatibility
-    private String replacePlaceholders(String text, Map<String, Object> data) {
-        return replacePlaceholders(text, data, null);
-    }
-
-    private void processTableArrays(XWPFDocument doc, Map<String, Object> data, Map<String, Formatter> formatters) {
-        for (XWPFTable table : doc.getTables()) {
-            List<XWPFTableRow> rows = new ArrayList<>(table.getRows());
-            for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
-                XWPFTableRow row = rows.get(rowIdx);
-                StringBuilder rowTextBuilder = new StringBuilder();
-                for (XWPFTableCell cell : row.getTableCells()) {
-                    for (XWPFParagraph para : cell.getParagraphs()) {
-                        for (XWPFRun run : para.getRuns()) {
-                            String text = run.getText(0);
-                            if (text != null) {
-                                rowTextBuilder.append(text);
-                            }
-                        }
-                    }
-                }
-                String rowText = rowTextBuilder.toString();
-                String arrayKey = getArrayKeyFromRow(rowText);
-                if (arrayKey != null && data.get(arrayKey) instanceof List) {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> items = (List<Map<String, Object>>) data.get(arrayKey);
-                    int insertIdx = rowIdx;
-                    for (Map<String, Object> item : items) {
-                        XWPFTableRow newRow = table.insertNewTableRow(insertIdx + 1);
-                        cloneAndReplaceRow(row, newRow, arrayKey, item, formatters);
-                        insertIdx++;
-                    }
-                    table.removeRow(rowIdx);
-                    break;
-                }
-            }
-        }
-    }
-
-    // Overload for compatibility
-    private void processTableArrays(XWPFDocument doc, Map<String, Object> data) {
-        processTableArrays(doc, data, null);
-    }
-
-    private void cloneAndReplaceRow(XWPFTableRow templateRow, XWPFTableRow newRow, String arrayKey, Map<String, Object> item, Map<String, Formatter> formatters) {
-        while (newRow.getTableCells().size() > 0) {
-            newRow.removeCell(0);
-        }
-        for (int i = 0; i < templateRow.getTableCells().size(); i++) {
-            XWPFTableCell templateCell = templateRow.getCell(i);
-            String cellXml = templateCell.getCTTc().xmlText();
-            java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("\\$\\{([^}]+)\\}");
-            java.util.regex.Matcher matcher = pattern.matcher(cellXml);
-            StringBuffer sb = new StringBuffer();
-            while (matcher.find()) {
-                String expr = matcher.group(1).trim();
-                String[] parts = expr.split(":", 2);
-                String keyExpr = parts[0].trim();
-                Object value = resolveDeepKey(keyExpr, item);
-                String replacement = value == null ? "" : value.toString();
-                if (parts.length > 1 && formatters != null) {
-                    String formatterExpr = parts[1].trim();
-                    String formatterName;
-                    String[] formatterArgs = new String[0];
-                    if (formatterExpr.contains("(")) {
-                        int idx = formatterExpr.indexOf('(');
-                        formatterName = formatterExpr.substring(0, idx);
-                        String argStr = formatterExpr.substring(idx + 1, formatterExpr.length() - 1);
-                        formatterArgs = argStr.split(",");
-                        for (int j = 0; j < formatterArgs.length; j++) {
-                            formatterArgs[j] = formatterArgs[j].trim();
-                        }
-                    } else {
-                        formatterName = formatterExpr;
-                    }
-                    Formatter formatter = formatters.get(formatterName);
-                    if (formatter != null) {
-                        replacement = formatter.format(replacement, formatterArgs);
-                    }
-                }
-                replacement = xmlEscape(replacement);
-                matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(replacement));
-            }
-            matcher.appendTail(sb);
-            cellXml = sb.toString();
-            XWPFTableCell newCell = newRow.addNewTableCell();
-            try {
-                org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc ctTc = org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc.Factory.parse(cellXml);
-                newCell.getCTTc().set(ctTc);
-            } catch (Exception e) {
-                newCell.getCTTc().set(templateCell.getCTTc().copy());
-            }
-        }
-    }
-
-    private String getArrayKeyFromRow(String rowText) {
-        // Looks for a placeholder like ${items.something} or ${items.nested.something} with optional spaces
-        if (rowText == null) return null;
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\$\\{\\s*([a-zA-Z0-9_]+)\\s*(?:\\.[a-zA-Z0-9_]+)+\\s*\}").matcher(rowText);
-        if (matcher.find()) {
-            return matcher.group(1);
-        }
-        return null;
-    }
-
-    private String replaceArrayPlaceholders(String text, String arrayKey, Map<String, Object> item) {
-        String result = text;
-        for (Map.Entry<String, Object> entry : item.entrySet()) {
-            String keyPattern = "\\$\\{" + arrayKey + "\\.\\s*" + entry.getKey() + "\\s*\\}";
-            result = result.replaceAll(keyPattern, entry.getValue() == null ? "" : entry.getValue().toString());
-        }
-        return result;
-    }
-
-    private Object resolveDeepKey(String expr, Map<String, Object> data) {
-        String[] parts = expr.split("\\.");
+    private Object getNestedValue(Map<String, Object> data, String key) {
+        String[] parts = key.split("\\.");
         Object current = data;
+        
         for (String part : parts) {
             if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
             } else {
                 return null;
             }
-            if (current == null) return null;
         }
+        
         return current;
-    }
-
-    private String xmlEscape(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
     }
 } 

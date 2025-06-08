@@ -1,51 +1,81 @@
 package com.yourcompany.docgen.formats;
 
-import org.apache.poi.xslf.usermodel.XMLSlideShow;
-import org.apache.poi.xslf.usermodel.XSLFShape;
-import org.apache.poi.xslf.usermodel.XSLFTextShape;
-import org.apache.poi.xslf.usermodel.XSLFTextParagraph;
-import org.apache.poi.xslf.usermodel.XSLFSlide;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.util.Map;
-import java.util.List;
-import java.util.ArrayList;
+import org.apache.poi.xslf.usermodel.*;
+import java.io.*;
+import java.util.*;
+import java.util.regex.*;
 
-public class PptProcessor implements TemplateProcessor {
+public class PptProcessor implements DocumentProcessor {
+    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
+
     @Override
     public void processTemplate(String templatePath, String outputPath, Map<String, Object> data) throws Exception {
-        try (FileInputStream fis = new FileInputStream(templatePath);
-             XMLSlideShow ppt = new XMLSlideShow(fis)) {
+        if (templatePath == null || outputPath == null || data == null) {
+            throw new IllegalArgumentException("Template path, output path, and data cannot be null");
+        }
+
+        File templateFile = new File(templatePath);
+        if (!templateFile.exists()) {
+            throw new FileNotFoundException("Template file not found: " + templatePath);
+        }
+
+        try (XMLSlideShow ppt = new XMLSlideShow(new FileInputStream(templateFile))) {
+            // Process each slide
             for (XSLFSlide slide : ppt.getSlides()) {
-                for (XSLFShape shape : slide.getShapes()) {
-                    if (shape instanceof XSLFTextShape) {
-                        XSLFTextShape textShape = (XSLFTextShape) shape;
-                        String text = textShape.getText();
-                        String replaced = replacePlaceholders(text, data);
-
-                        // Remove all existing text paragraphs
-                        List<XSLFTextParagraph> paragraphs = new ArrayList<>(textShape.getTextParagraphs());
-                        for (XSLFTextParagraph para : paragraphs) {
-                            textShape.removeTextParagraph(para);
-                        }
-
-                        // Add a new paragraph with the replaced text
-                        textShape.addNewTextParagraph().addNewTextRun().setText(replaced);
-                    }
-                }
+                processSlide(slide, data);
             }
-            try (FileOutputStream fos = new FileOutputStream(outputPath)) {
-                ppt.write(fos);
+
+            // Save the processed presentation
+            try (FileOutputStream out = new FileOutputStream(outputPath)) {
+                ppt.write(out);
+            }
+        } catch (Exception e) {
+            throw new Exception("Failed to process PowerPoint template: " + e.getMessage(), e);
+        }
+    }
+
+    private void processSlide(XSLFSlide slide, Map<String, Object> data) {
+        for (XSLFShape shape : slide.getShapes()) {
+            if (shape instanceof XSLFTextShape) {
+                processTextShape((XSLFTextShape) shape, data);
             }
         }
     }
 
-    private String replacePlaceholders(String text, Map<String, Object> data) {
-        String result = text;
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            String key = "${" + entry.getKey() + "}";
-            result = result.replace(key, entry.getValue() == null ? "" : entry.getValue().toString());
+    private void processTextShape(XSLFTextShape shape, Map<String, Object> data) {
+        String text = shape.getText();
+        if (text != null && text.contains("${")) {
+            String newText = replacePlaceholders(text, data);
+            shape.setText(newText);
         }
-        return result;
+    }
+
+    private String replacePlaceholders(String text, Map<String, Object> data) {
+        StringBuilder result = new StringBuilder(text);
+        Matcher matcher = PLACEHOLDER_PATTERN.matcher(text);
+        
+        while (matcher.find()) {
+            String placeholder = matcher.group(1).trim();
+            Object value = getNestedValue(data, placeholder);
+            String replacement = value != null ? value.toString() : "";
+            result.replace(matcher.start(), matcher.end(), replacement);
+        }
+        
+        return result.toString();
+    }
+
+    private Object getNestedValue(Map<String, Object> data, String key) {
+        String[] parts = key.split("\\.");
+        Object current = data;
+        
+        for (String part : parts) {
+            if (current instanceof Map) {
+                current = ((Map<?, ?>) current).get(part);
+            } else {
+                return null;
+            }
+        }
+        
+        return current;
     }
 } 

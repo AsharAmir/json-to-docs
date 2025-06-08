@@ -3,84 +3,151 @@ package com.yourcompany.docgen.formats;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class HelperUtils {
+    private static final String ALPHANUMERIC = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final Random random = new Random();
+
     public static String uniqueId() {
         return UUID.randomUUID().toString();
     }
-    public static String randomId(int len) {
-        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        StringBuilder sb = new StringBuilder();
-        Random r = new Random();
-        for (int i = 0; i < len; i++) sb.append(chars.charAt(r.nextInt(chars.length())));
+
+    public static String randomId(int length) {
+        if (length <= 0) return "";
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(ALPHANUMERIC.charAt(random.nextInt(ALPHANUMERIC.length())));
+        }
         return sb.toString();
     }
-    public static String safeFilename(String s) {
-        if (s == null) return null;
-        return s.replaceAll("[^a-zA-Z0-9._-]", "_");
+
+    public static String safeFilename(String filename) {
+        if (filename == null) return null;
+        return filename.replaceAll("[^a-zA-Z0-9.-]", "_");
     }
-    public static Map<String, String> readDirectory(String dir, String ext) throws IOException {
-        Map<String, String> files = new HashMap<>();
-        File d = new File(dir);
-        if (!d.exists() || !d.isDirectory()) return files;
-        for (File f : Objects.requireNonNull(d.listFiles())) {
-            if (ext == null || f.getName().endsWith(ext)) {
-                files.put(f.getName(), new String(Files.readAllBytes(f.toPath())));
+
+    public static Map<String, String> readDirectory(String dirPath, String extension) throws IOException {
+        if (dirPath == null || extension == null) return new HashMap<>();
+        Path dir = Paths.get(dirPath);
+        if (!Files.exists(dir)) return new HashMap<>();
+        
+        return Files.walk(dir)
+            .filter(Files::isRegularFile)
+            .filter(p -> p.toString().endsWith(extension))
+            .collect(Collectors.toMap(
+                p -> p.getFileName().toString(),
+                p -> {
+                    try {
+                        return Files.readString(p);
+                    } catch (IOException e) {
+                        return "";
+                    }
+                }
+            ));
+    }
+
+    public static void copyDirectory(String sourcePath, String targetPath) throws IOException {
+        if (sourcePath == null || targetPath == null) return;
+        Path source = Paths.get(sourcePath);
+        Path target = Paths.get(targetPath);
+        
+        if (!Files.exists(source)) return;
+        if (!Files.exists(target)) {
+            Files.createDirectories(target);
+        }
+
+        Files.walk(source)
+            .forEach(sourceFile -> {
+                try {
+                    Path targetFile = target.resolve(source.relativize(sourceFile));
+                    if (Files.isDirectory(sourceFile)) {
+                        if (!Files.exists(targetFile)) {
+                            Files.createDirectories(targetFile);
+                        }
+                    } else {
+                        Files.copy(sourceFile, targetFile, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+    }
+
+    public static boolean removeDirectory(String dirPath) {
+        if (dirPath == null) return false;
+        Path dir = Paths.get(dirPath);
+        if (!Files.exists(dir)) return false;
+        
+        try {
+            Files.walk(dir)
+                .sorted(Comparator.reverseOrder())
+                .forEach(path -> {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException e) {
+                        throw new UncheckedIOException(e);
+                    }
+                });
+            return true;
+        } catch (UncheckedIOException e) {
+            return false;
+        }
+    }
+
+    public static String cleanJsVar(String input) {
+        if (input == null) return null;
+        return input.replaceAll("[^a-zA-Z0-9_]", "_");
+    }
+
+    public static String removeQuotes(String input) {
+        if (input == null) return null;
+        return input.replaceAll("^[\"']|[\"']$", "");
+    }
+
+    public static int stringDistance(String s1, String s2) {
+        if (s1 == null || s2 == null) return -1;
+        if (s1.equals(s2)) return 0;
+        
+        int[] costs = new int[s2.length() + 1];
+        for (int i = 0; i <= s1.length(); i++) {
+            int lastValue = i;
+            for (int j = 0; j <= s2.length(); j++) {
+                if (i == 0) {
+                    costs[j] = j;
+                } else if (j > 0) {
+                    int newValue = costs[j - 1];
+                    if (s1.charAt(i - 1) != s2.charAt(j - 1)) {
+                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                    }
+                    costs[j - 1] = lastValue;
+                    lastValue = newValue;
+                }
+            }
+            if (i > 0) {
+                costs[s2.length()] = lastValue;
             }
         }
-        return files;
+        return costs[s2.length()];
     }
-    public static boolean removeDirectory(String dir) {
-        File d = new File(dir);
-        if (!d.exists()) return false;
-        File[] files = d.listFiles();
-        if (files != null) for (File f : files) f.delete();
-        return d.delete();
-    }
-    public static void copyDirectory(String src, String dest) throws IOException {
-        File srcDir = new File(src);
-        File destDir = new File(dest);
-        if (!destDir.exists()) destDir.mkdirs();
-        for (File f : Objects.requireNonNull(srcDir.listFiles())) {
-            Files.copy(f.toPath(), new File(destDir, f.getName()).toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-    public static String cleanJsVar(String s) {
-        if (s == null) return null;
-        return s.replaceAll("[^a-zA-Z0-9_]", "_");
-    }
-    public static String removeQuotes(String s) {
-        if (s == null) return null;
-        if (s.startsWith("\"") && s.endsWith("\"")) return s.substring(1, s.length() - 1);
-        if (s.startsWith("'") && s.endsWith("'")) return s.substring(1, s.length() - 1);
-        return s;
-    }
-    public static int stringDistance(String a, String b) {
-        if (a == null || b == null) return -1;
-        int[][] dp = new int[a.length() + 1][b.length() + 1];
-        for (int i = 0; i <= a.length(); i++) dp[i][0] = i;
-        for (int j = 0; j <= b.length(); j++) dp[0][j] = j;
-        for (int i = 1; i <= a.length(); i++) {
-            for (int j = 1; j <= b.length(); j++) {
-                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
-                dp[i][j] = Math.min(Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1), dp[i - 1][j - 1] + cost);
-            }
-        }
-        return dp[a.length()][b.length()];
-    }
+
     public static Object getPathValue(Map<String, Object> map, String path) {
         if (map == null || path == null) return null;
-        String[] parts = path.split("\\.");
+        String[] keys = path.split("\\.");
         Object current = map;
-        for (String part : parts) {
-            if (current instanceof Map) current = ((Map<?, ?>) current).get(part);
-            else return null;
+        
+        for (String key : keys) {
+            if (current instanceof Map) {
+                current = ((Map<?, ?>) current).get(key);
+            } else {
+                return null;
+            }
         }
         return current;
     }
-    public static <T> List<T> deduplicate(List<T> arr) {
-        if (arr == null) return null;
-        return new ArrayList<>(new LinkedHashSet<>(arr));
+
+    public static <T> List<T> deduplicate(List<T> list) {
+        if (list == null) return null;
+        return new ArrayList<>(new LinkedHashSet<>(list));
     }
 } 

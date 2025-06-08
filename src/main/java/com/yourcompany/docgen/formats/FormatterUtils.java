@@ -1,107 +1,158 @@
 package com.yourcompany.docgen.formats;
 
 import java.time.*;
-import java.time.format.DateTimeFormatter;
+import java.time.format.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class FormatterUtils {
-    // Date formatting
-    public static String formatDateISO(Object value) {
-        if (value == null) return null;
-        try {
-            if (value instanceof Long || value instanceof Integer) {
-                Instant instant = Instant.ofEpochMilli(((Number) value).longValue());
-                return LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).toLocalDate().toString();
-            }
-            if (value instanceof String) {
-                LocalDate date = LocalDate.parse((String) value);
-                return date.toString();
-            }
-        } catch (Exception e) { return null; }
-        return null;
-    }
+    private static final DateTimeFormatter ISO_DATE = DateTimeFormatter.ISO_LOCAL_DATE;
 
-    public static Integer getWeekNumber(Object value) {
-        if (value == null) return null;
-        try {
-            LocalDate date;
-            if (value instanceof Long || value instanceof Integer) {
-                Instant instant = Instant.ofEpochMilli(((Number) value).longValue());
-                date = LocalDateTime.ofInstant(instant, ZoneId.systemDefault()).toLocalDate();
-            } else {
-                date = LocalDate.parse(value.toString());
-            }
-            return date.get(java.time.temporal.IsoFields.WEEK_OF_WEEK_BASED_YEAR);
-        } catch (Exception e) { return null; }
-    }
-
-    // Text case manipulation
-    public static String toLower(String s) {
-        return s == null ? null : s.toLowerCase();
-    }
-    public static String toUpper(String s) {
-        return s == null ? null : s.toUpperCase();
-    }
-    public static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return s.substring(0, 1).toUpperCase() + s.substring(1);
-    }
-    public static String capitalizeWords(String s) {
-        if (s == null || s.isEmpty()) return s;
-        String[] words = s.split(" ");
-        StringBuilder sb = new StringBuilder();
-        for (String word : words) {
-            if (!word.isEmpty()) sb.append(capitalize(word));
-            sb.append(" ");
+    public static String formatDateISO(String dateStr) {
+        if (dateStr == null) {
+            return null;
         }
-        return sb.toString().trim();
+        try {
+            LocalDate date = LocalDate.parse(dateStr, ISO_DATE);
+            return date.format(ISO_DATE);
+        } catch (DateTimeParseException e) {
+            return null;
+        }
     }
 
-    // Padding
-    public static String padLeft(String s, int len, String pad) {
-        if (s == null) s = "";
-        if (pad == null || pad.isEmpty()) pad = " ";
-        while (s.length() < len) s = pad + s;
-        return s;
-    }
-    public static String padRight(String s, int len, String pad) {
-        if (s == null) s = "";
-        if (pad == null || pad.isEmpty()) pad = " ";
-        while (s.length() < len) s = s + pad;
-        return s;
+    public static String formatDateISO(Long timestamp) {
+        if (timestamp == null) {
+            return null;
+        }
+        try {
+            LocalDate date = Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+            return date.format(ISO_DATE);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    // Number operations
+    public static Integer getWeekNumber(String dateStr) {
+        if (dateStr == null) {
+            return null;
+        }
+        try {
+            LocalDate date = LocalDate.parse(dateStr, ISO_DATE);
+            return date.get(WeekFields.ISO.weekOfWeekBasedYear());
+        } catch (DateTimeParseException e) {
+            return null;
+        }
+    }
+
+    public static Integer getWeekNumber(Long timestamp) {
+        if (timestamp == null) {
+            return null;
+        }
+        try {
+            LocalDate date = Instant.ofEpochMilli(timestamp)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate();
+            return date.get(WeekFields.ISO.weekOfWeekBasedYear());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String toLower(String text) {
+        return text != null ? text.toLowerCase() : null;
+    }
+
+    public static String toUpper(String text) {
+        return text != null ? text.toUpperCase() : null;
+    }
+
+    public static String capitalize(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+        return text.substring(0, 1).toUpperCase() + text.substring(1).toLowerCase();
+    }
+
+    public static String capitalizeWords(String text) {
+        if (text == null) {
+            return null;
+        }
+        return Arrays.stream(text.split("\\s+"))
+            .map(FormatterUtils::capitalize)
+            .collect(Collectors.joining(" "));
+    }
+
+    public static String padLeft(String text, int length, String padChar) {
+        if (text == null) {
+            return padChar.repeat(length);
+        }
+        if (text.length() >= length) {
+            return text;
+        }
+        return padChar.repeat(length - text.length()) + text;
+    }
+
+    public static String padRight(String text, int length, String padChar) {
+        if (text == null) {
+            return padChar.repeat(length);
+        }
+        if (text.length() >= length) {
+            return text;
+        }
+        return text + padChar.repeat(length - text.length());
+    }
+
     public static Double add(Number a, Number b) {
-        if (a == null || b == null) return null;
+        if (a == null || b == null) {
+            return null;
+        }
         return a.doubleValue() + b.doubleValue();
     }
+
     public static Double subtract(Number a, Number b) {
-        if (a == null || b == null) return null;
+        if (a == null || b == null) {
+            return null;
+        }
         return a.doubleValue() - b.doubleValue();
     }
+
     public static Double multiply(Number a, Number b) {
-        if (a == null || b == null) return null;
+        if (a == null || b == null) {
+            return null;
+        }
         return a.doubleValue() * b.doubleValue();
     }
+
     public static Double divide(Number a, Number b) {
-        if (a == null || b == null || b.doubleValue() == 0) return null;
+        if (a == null || b == null || b.doubleValue() == 0) {
+            return null;
+        }
         return a.doubleValue() / b.doubleValue();
     }
 
-    // Array join/map
-    public static String join(List<?> arr, String sep) {
-        if (arr == null) return null;
-        if (sep == null) sep = ",";
-        return String.join(sep, arr.stream().map(Object::toString).toArray(String[]::new));
-    }
-    public static List<Object> flatten(List<?> arr) {
-        if (arr == null) return null;
-        List<Object> flat = new ArrayList<>();
-        for (Object o : arr) {
-            if (o instanceof List) flat.addAll(flatten((List<?>) o));
-            else flat.add(o);
+    public static String join(List<?> list, String delimiter) {
+        if (list == null) {
+            return null;
         }
-        return flat;
+        return list.stream()
+            .map(Object::toString)
+            .collect(Collectors.joining(delimiter));
+    }
+
+    public static List<Object> flatten(List<?> list) {
+        if (list == null) {
+            return null;
+        }
+        List<Object> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof List) {
+                result.addAll(flatten((List<?>) item));
+            } else {
+                result.add(item);
+            }
+        }
+        return result;
     }
 } 

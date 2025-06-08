@@ -1,34 +1,48 @@
 package com.yourcompany.docgen.formats;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.regex.*;
 
 public class MarkerExtractor {
+    private static final Pattern MARKER_PATTERN = Pattern.compile("\\$\\{([^}]+)\\}");
+    private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile("\\s*,\\s*");
+
     public static class Descriptor {
-        public List<String> markers = new ArrayList<>();
-        public Map<String, List<String>> attributes = new HashMap<>();
+        public final List<String> markers;
+        public final Map<String, List<String>> attributes;
+
+        public Descriptor() {
+            this.markers = new ArrayList<>();
+            this.attributes = new HashMap<>();
+        }
     }
 
-    public static Descriptor extractDescriptor(String template) {
-        Descriptor desc = new Descriptor();
-        if (template == null || template.isEmpty()) return desc;
-        Pattern pattern = Pattern.compile("\\$\\{([^}]+)\\}");
-        Matcher matcher = pattern.matcher(template);
-        while (matcher.find()) {
-            String raw = matcher.group(1).trim();
-            // Clean unwanted spaces
-            raw = raw.replaceAll("\\s+", " ").trim();
-            desc.markers.add(raw);
-            // Detect multiple attributes (comma separated)
-            String[] parts = raw.split(",");
-            List<String> attrs = new ArrayList<>();
-            for (String part : parts) {
-                String cleaned = part.trim();
-                attrs.add(cleaned);
-            }
-            desc.attributes.put(raw, attrs);
+    public static Descriptor extractDescriptor(String text) {
+        Descriptor descriptor = new Descriptor();
+        if (text == null) {
+            return descriptor;
         }
-        return desc;
+
+        Matcher matcher = MARKER_PATTERN.matcher(text);
+        while (matcher.find()) {
+            String content = matcher.group(1).trim();
+            if (!content.isEmpty()) {
+                descriptor.markers.add(content);
+                
+                // Split attributes by comma and clean spaces
+                String[] attributes = ATTRIBUTE_PATTERN.split(content);
+                List<String> cleanAttributes = new ArrayList<>();
+                for (String attr : attributes) {
+                    String cleanAttr = attr.trim();
+                    if (!cleanAttr.isEmpty()) {
+                        cleanAttributes.add(cleanAttr);
+                    }
+                }
+                
+                descriptor.attributes.put(content, cleanAttributes);
+            }
+        }
+
+        return descriptor;
     }
 } 
